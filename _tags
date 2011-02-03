@@ -1,0 +1,14 @@
+# OASIS_START
+# DO NOT EDIT (digest: 68829883ab2d810ecc5777b729dd8c6c)
+# Executable reflow
+"main.byte": pkg_sdl.sdlttf
+"main.byte": pkg_sdl.sdlimage
+"main.byte": pkg_sdl
+"main.byte": pkg_portaudio
+"main.byte": pkg_fftw3
+<*.ml{,i}>: pkg_sdl.sdlttf
+<*.ml{,i}>: pkg_sdl.sdlimage
+<*.ml{,i}>: pkg_sdl
+<*.ml{,i}>: pkg_portaudio
+<*.ml{,i}>: pkg_fftw3
+# OASIS_STOP
