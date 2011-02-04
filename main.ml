@@ -1,5 +1,15 @@
 module FFT = Fftw3.S
 
+let clip signal max =
+    let len = Array.length signal in
+    for i = 0 to len-1 do
+        if signal.(i) > max then
+            signal.(i) <- max
+        else
+            if signal.(i) < -.max then
+                signal.(i) <- -.max
+    done
+
 let createsin samples amp freq =
     let pi = 3.1415926 in
     let step = pi /. 22050. in
@@ -82,8 +92,8 @@ let print_freqs font dest fs =
 
 let main () =
     init ();
-    let surface = Sdlvideo.set_video_mode 300 300 [`DOUBLEBUF; `HWSURFACE; `RESIZABLE] in
-    let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 24 in
+    let surface = Sdlvideo.set_video_mode 1000 580 [`DOUBLEBUF; `HWSURFACE; `RESIZABLE] in
+    let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 64 in
     let stream = Portaudio.open_default_stream 1 1 44100 256 in
     Portaudio.start_stream stream;
     let loop = ref true in
@@ -100,10 +110,9 @@ let main () =
         big_copy_array signal micbufc 0 1024;
         FFT.exec plan;
         let mx = dftmag dft mag in
-        let freqs = foldmaxima (fun a i v -> if v > 0.9 *. mx then (i, v)::a else a) [] mag in
+        let freqs = foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
         print_freqs tnr surface freqs;
         Sdlvideo.flip surface;
     done
 
 let _ = main ()
-
