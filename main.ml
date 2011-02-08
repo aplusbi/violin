@@ -12,7 +12,7 @@ let clip signal max =
 
 let createsin samples amp freq =
     let pi = 3.1415926 in
-    let step = pi /. 22050. in
+    let step = pi /. 11025. /. 2. in
     let wave i =
         let t = step *. (float_of_int i) in
         List.fold_left2 (fun a b c -> a +. b *. sin (c *. t)) 0. amp freq
@@ -43,11 +43,11 @@ let foldmaxima f acc signal =
 
 
 let miclen = 1024
+let readlen = 256
 let micbufc = Array.make miclen 0.
 let micbuf = [|micbufc|]
 
-let big_copy_array ba a first last =
-    let len = last - first in
+let big_copy_array ba a first len =
     for i = 0 to len-1 do
         Bigarray.Array1.set ba i a.(first + i)
     done
@@ -63,8 +63,9 @@ let dftmag ba a =
     !mx
 
 
-let signal = FFT.Array1.create FFT.float Bigarray.c_layout 1024
-let dft = FFT.Array1.create FFT.complex Bigarray.c_layout 513
+let fftsize = 4096
+let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsize
+let dft = FFT.Array1.create FFT.complex Bigarray.c_layout (fftsize/2 + 1)
 let mag = Array.make 257 0.
 let plan = FFT.Array1.r2c signal dft
 
@@ -76,27 +77,44 @@ let init () =
     at_exit Sdlttf.quit;
     at_exit Portaudio.terminate
 
-let print_freqs font dest fs =
-    let rec print fs x y = match fs with
-    | [] -> ()
-    | (i, v)::t ->
-        let f = (float_of_int i) *. 44100. /. 1024. in
-        let str = Printf.sprintf "%f: %f" f v in
+let sdl_print_string font str dest x y =
         let src = Sdlttf.render_text_solid font str Sdlvideo.white in
         let { Sdlvideo.w=w; Sdlvideo.h=h } = Sdlvideo.surface_info src in
         let destrect = { Sdlvideo.r_x=x; Sdlvideo.r_y=y; Sdlvideo.r_w=w; Sdlvideo.r_h=h } in
-        Sdlvideo.blit_surface ~src:src ~dst:dest ~dst_rect:destrect ();
-        print t x (y+h)
+        Sdlvideo.blit_surface ~src:src ~dst:dest ~dst_rect:destrect ()
+
+let print_freqs notes font dest fs =
+    let rec print fs x y = match fs with
+    | [] -> ()
+    | (i, v)::t ->
+        try
+            let f = Notes.NoteMap.find i notes in
+            let str = Printf.sprintf "%s: %f" f v in
+            let src = Sdlttf.render_text_solid font str Sdlvideo.white in
+            let { Sdlvideo.w=w; Sdlvideo.h=h } = Sdlvideo.surface_info src in
+            let destrect = { Sdlvideo.r_x=x; Sdlvideo.r_y=y; Sdlvideo.r_w=w; Sdlvideo.r_h=h } in
+            Sdlvideo.blit_surface ~src:src ~dst:dest ~dst_rect:destrect ();
+            print t x (y+h)
+        with Not_found -> print t x y
     in
     print fs 0 0
 
 let main () =
+    let width, height = 640, 480 in
+    Bigarray.Array1.fill signal 0.;
     init ();
-    let surface = Sdlvideo.set_video_mode 1000 580 [`DOUBLEBUF; `HWSURFACE; `RESIZABLE] in
-    let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 64 in
-    let stream = Portaudio.open_default_stream 1 1 44100 256 in
+    let notes = Notes.read_notes "assets/notes.txt" in
+    let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
+    let two55 = Int32.of_int 255 in
+    let frequencies = Sdlvideo.create_RGB_surface [`HWSURFACE] width height 24 two55 two55 two55 two55 in
+    let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 32 in
+    let stream = Portaudio.open_default_stream 1 1 11025 miclen in
     Portaudio.start_stream stream;
     let loop = ref true in
+    let frame = ref 0 in
+    let rate = ref 0 in
+    let stime = ref (Unix.gettimeofday ()) in
+    let readmic = ref 0 in
     while !loop do
         Sdlvideo.fill_rect surface (Int32.of_int 0);
         Sdlevent.pump ();
@@ -105,13 +123,32 @@ let main () =
         | _ -> ();
         if Sdlkey.is_key_pressed Sdlkey.KEY_ESCAPE then
             loop := false;
-        Portaudio.read_stream stream micbuf 0 miclen;
-        Portaudio.write_stream stream micbuf 0 miclen;
-        big_copy_array signal micbufc 0 1024;
-        FFT.exec plan;
-        let mx = dftmag dft mag in
-        let freqs = foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
-        print_freqs tnr surface freqs;
+
+        Portaudio.read_stream stream micbuf !readmic readlen;
+        readmic := !readmic + readlen;
+        if !readmic >= miclen then
+        begin
+            readmic := 0;
+            Sdlvideo.fill_rect frequencies (Int32.of_int 0);
+            big_copy_array signal micbufc 0 miclen;
+            FFT.exec plan;
+            let mx = dftmag dft mag in
+            let freqs = foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
+            print_freqs notes tnr frequencies freqs;
+        end;
+        Sdlvideo.blit_surface ~src:frequencies ~dst:surface
+        ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width; Sdlvideo.r_h=height} ();
+
+        (* print frame rate *)
+        incr frame;
+        if (Unix.gettimeofday ()) -. !stime > 1. then
+            begin
+                rate := !frame;
+                frame := 0;
+                stime := Unix.gettimeofday ()
+            end;
+        let str = Printf.sprintf "%d" !rate in
+        sdl_print_string tnr str surface 300 300;
         Sdlvideo.flip surface;
     done
 

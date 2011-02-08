@@ -12,5 +12,5 @@ Executable reflow
   CompiledObject: byte
   BuildTools: ocamlbuild
   MainIs:     main.ml
-  BuildDepends: fftw3, portaudio, sdl, sdl.sdlimage, sdl.sdlttf
+  BuildDepends: unix, fftw3, portaudio, sdl, sdl.sdlimage, sdl.sdlttf
   
