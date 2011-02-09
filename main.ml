@@ -1,5 +1,7 @@
 module FFT = Fftw3.S
 
+let pi = 3.1415926
+
 let clip signal max =
     let len = Array.length signal in
     for i = 0 to len-1 do
@@ -11,8 +13,7 @@ let clip signal max =
     done
 
 let createsin samples amp freq =
-    let pi = 3.1415926 in
-    let step = pi /. 11025. /. 2. in
+    let step = 2. *. pi /. 11025. in
     let wave i =
         let t = step *. (float_of_int i) in
         List.fold_left2 (fun a b c -> a +. b *. sin (c *. t)) 0. amp freq
@@ -47,6 +48,16 @@ let readlen = 256
 let micbufc = Array.make miclen 0.
 let micbuf = [|micbufc|]
 
+let hann_window ba =
+    let len = Bigarray.Array1.dim ba in
+    for i = 0 to len-1 do
+        let n = float_of_int i in
+        let l = float_of_int (len - 1) in
+        let wn = 0.5 *. (1. -. (cos (2. *. pi *. n /. l))) in
+        let x = Bigarray.Array1.get ba i in
+        Bigarray.Array1.set ba i (x *. wn)
+    done
+
 let big_copy_array ba a first len =
     for i = 0 to len-1 do
         Bigarray.Array1.set ba i a.(first + i)
@@ -63,10 +74,10 @@ let dftmag ba a =
     !mx
 
 
-let fftsize = 4096
+let fftsize = 8192
 let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsize
 let dft = FFT.Array1.create FFT.complex Bigarray.c_layout (fftsize/2 + 1)
-let mag = Array.make 257 0.
+let mag = Array.make (fftsize/2 + 1) 0.
 let plan = FFT.Array1.r2c signal dft
 
 let init () =
@@ -89,6 +100,7 @@ let print_freqs notes font dest fs =
     | (i, v)::t ->
         try
             let f = Notes.NoteMap.find i notes in
+            (*let f = string_of_float ((float_of_int i) *. 11025. /. (float_of_int fftsize)) in*)
             let str = Printf.sprintf "%s: %f" f v in
             let src = Sdlttf.render_text_solid font str Sdlvideo.white in
             let { Sdlvideo.w=w; Sdlvideo.h=h } = Sdlvideo.surface_info src in
@@ -102,13 +114,15 @@ let print_freqs notes font dest fs =
 let main () =
     let width, height = 640, 480 in
     Bigarray.Array1.fill signal 0.;
+    big_copy_array signal (createsin 1024 [16.; 8.] [262.;440.]) 0 1024;
+    hann_window signal;
     init ();
     let notes = Notes.read_notes "assets/notes.txt" in
     let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
     let two55 = Int32.of_int 255 in
     let frequencies = Sdlvideo.create_RGB_surface [`HWSURFACE] width height 24 two55 two55 two55 two55 in
     let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 32 in
-    let stream = Portaudio.open_default_stream 1 1 11025 miclen in
+    let stream = Portaudio.open_default_stream 1 1 11025 readlen in
     Portaudio.start_stream stream;
     let loop = ref true in
     let frame = ref 0 in
@@ -125,12 +139,14 @@ let main () =
             loop := false;
 
         Portaudio.read_stream stream micbuf !readmic readlen;
+        Portaudio.write_stream stream micbuf !readmic readlen;
         readmic := !readmic + readlen;
         if !readmic >= miclen then
         begin
             readmic := 0;
             Sdlvideo.fill_rect frequencies (Int32.of_int 0);
             big_copy_array signal micbufc 0 miclen;
+            hann_window signal;
             FFT.exec plan;
             let mx = dftmag dft mag in
             let freqs = foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
