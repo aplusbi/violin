@@ -20,18 +20,18 @@ let split_string str ch =
     in
     split 0
 
-let bucket s =
+let bucket s rate samples =
     let f = float_of_string s in
-    int_of_float (f *. 4096. /. 11025.)
+    int_of_float (f *. (float_of_int samples) /. (float_of_int rate))
 
-let read_notes fname =
+let read_notes fname rate samples =
     let file = open_in fname in
     let rec read_line () =
         try
             let line = input_line file in
             match split_string line '\t' with
             | [] -> failwith "Error reading notes"
-            | h::t -> List.fold_left (fun m x -> NoteMap.add (bucket x) h m) (read_line ()) t
+            | h::t -> List.fold_left (fun m x -> NoteMap.add (bucket x rate samples) h m) (read_line ()) t
         with End_of_file -> NoteMap.empty
     in
     read_line ()

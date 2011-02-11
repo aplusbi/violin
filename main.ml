@@ -1,78 +1,9 @@
 module FFT = Fftw3.S
 
-let pi = 3.1415926
-
-let clip signal max =
-    let len = Array.length signal in
-    for i = 0 to len-1 do
-        if signal.(i) > max then
-            signal.(i) <- max
-        else
-            if signal.(i) < -.max then
-                signal.(i) <- -.max
-    done
-
-let createsin samples amp freq =
-    let step = 2. *. pi /. 11025. in
-    let wave i =
-        let t = step *. (float_of_int i) in
-        List.fold_left2 (fun a b c -> a +. b *. sin (c *. t)) 0. amp freq
-    in
-    Array.init samples wave
-
-let itermaxima f signal =
-        let len = Array.length signal in
-        for i = 1 to len-2 do
-                let p = signal.(i-1) in
-                let c = signal.(i) in
-                let n = signal.(i+1) in
-                if p <= c && n <= c then
-                        f i c
-  done 
-
-let foldmaxima f acc signal =
-    let a = ref acc in
-    let len = Array.length signal in
-    for i = 1 to len-2 do
-        let p = signal.(i-1) in
-        let c = signal.(i) in
-        let n = signal.(i+1) in
-        if p <= c && n <= c then
-            a := f !a i c
-    done;
-    !a
-
-
 let miclen = 1024
 let readlen = 256
 let micbufc = Array.make miclen 0.
 let micbuf = [|micbufc|]
-
-let hann_window ba =
-    let len = Bigarray.Array1.dim ba in
-    for i = 0 to len-1 do
-        let n = float_of_int i in
-        let l = float_of_int (len - 1) in
-        let wn = 0.5 *. (1. -. (cos (2. *. pi *. n /. l))) in
-        let x = Bigarray.Array1.get ba i in
-        Bigarray.Array1.set ba i (x *. wn)
-    done
-
-let big_copy_array ba a first len =
-    for i = 0 to len-1 do
-        Bigarray.Array1.set ba i a.(first + i)
-    done
-
-let dftmag ba a =
-    let len = min (Bigarray.Array1.dim ba) (Array.length a) in
-    let mx = ref 0. in
-    for i = 0 to len-1 do
-        a.(i) <- Complex.norm (Bigarray.Array1.get ba i);
-        if a.(i) > !mx then
-            mx := a.(i)
-    done;
-    !mx
-
 
 let fftsize = 8192
 let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsize
@@ -114,10 +45,10 @@ let print_freqs notes font dest fs =
 let main () =
     let width, height = 640, 480 in
     Bigarray.Array1.fill signal 0.;
-    big_copy_array signal (createsin 1024 [16.; 8.] [262.;440.]) 0 1024;
-    hann_window signal;
+    Utils.big_array_copy signal (Wav.createsin 1024 11025 [16.; 8.] [262.;440.]) 0 1024;
+    Wav.hann_window signal;
     init ();
-    let notes = Notes.read_notes "assets/notes.txt" in
+    let notes = Notes.read_notes "assets/notes.txt" 11025 (fftsize/2) in
     let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
     let two55 = Int32.of_int 255 in
     let frequencies = Sdlvideo.create_RGB_surface [`HWSURFACE] width height 24 two55 two55 two55 two55 in
@@ -145,11 +76,11 @@ let main () =
         begin
             readmic := 0;
             Sdlvideo.fill_rect frequencies (Int32.of_int 0);
-            big_copy_array signal micbufc 0 miclen;
-            hann_window signal;
+            Utils.big_array_copy signal micbufc 0 miclen;
+            Wav.hann_window signal;
             FFT.exec plan;
-            let mx = dftmag dft mag in
-            let freqs = foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
+            let (_, mx) = Utils.mag dft mag in
+            let freqs = Utils.foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
             print_freqs notes tnr frequencies freqs;
         end;
         Sdlvideo.blit_surface ~src:frequencies ~dst:surface
