@@ -58,11 +58,11 @@ let hann_window ba =
 
 
 let freq_from_bucket rate samples i =
-    i * rate / samples
+    i * rate / samples / 2
 
 let fftsize = 8192
 
-let stream_processor stream step fftsz mag =
+let stream_processor stream sstep fftsz fstep mag =
     (* fft stuff *)
     let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsz in
     Bigarray.Array1.fill signal 0.;
@@ -71,16 +71,24 @@ let stream_processor stream step fftsz mag =
     let plan = FFT.Array1.r2c signal dft in
 
     (* portaudio stuff *)
-    let data = Array.make step 0. in
+    let data = Array.make fstep 0. in
     let buf = [|data|] in
+    let curr = ref 0 in
     (fun i ->
-        Portaudio.read_stream stream buf 0 step;
-        Utils.big_array_copy signal data 0 step;
-        FFT.exec plan;
-        Utils.mag dft mag
+        Portaudio.read_stream stream buf !curr sstep;
+        curr := !curr + sstep;
+        if !curr >= fstep then
+        begin
+            curr := 0;
+            Utils.big_array_copy signal data 0 fstep;
+            FFT.exec plan;
+            Some (Utils.mag dft mag)
+        end
+        else
+            None
     )
 
-let stream_playback_processor stream step fftsz mag =
+let stream_playback_processor stream sstep fftsz fstep mag =
     (* fft stuff *)
     let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsz in
     Bigarray.Array1.fill signal 0.;
@@ -89,20 +97,28 @@ let stream_playback_processor stream step fftsz mag =
     let plan = FFT.Array1.r2c signal dft in
 
     (* portaudio stuff *)
-    let data = Array.make step 0. in
+    let data = Array.make fstep 0. in
     let buf = [|data|] in
+    let curr = ref 0 in
     (fun i ->
-        Portaudio.read_stream stream buf 0 step;
-        Portaudio.write_stream stream buf 0 step;
-        Utils.big_array_copy signal data 0 step;
-        FFT.exec plan;
-        Utils.mag dft mag
+        Portaudio.read_stream stream buf !curr sstep;
+        Portaudio.write_stream stream buf !curr sstep;
+        curr := !curr + sstep;
+        if !curr >= fstep then
+        begin
+            curr := 0;
+            Utils.big_array_copy signal data 0 fstep;
+            FFT.exec plan;
+            Some (Utils.mag dft mag)
+        end
+        else
+            None
     )
 
-let line_in_processor rate step fftsz mag =
-    let stream = Portaudio.open_default_stream 1 0 rate step in
+let line_in_processor rate sstep fftsz fstep mag =
+    let stream = Portaudio.open_default_stream 1 0 rate fstep in
     Portaudio.start_stream stream;
-    stream_processor stream rate step fftsz mag
+    stream_processor stream sstep fftsz fstep mag
 
 let data_processor data rate step fftsz mag =
     let len = Array.length data in
@@ -131,7 +147,7 @@ let wav_processor fname rate step fftsz mag =
     let data = load_wav fname in
     data_processor data rate step fftsz mag
 
-let main str =
+(*let main str =
     Portaudio.init ();
     let notes = Notes.read_notes "assets/notes.txt" 44100 (fftsize/2) in
     let freq = freq_from_bucket 44100 fftsize in
@@ -155,3 +171,27 @@ let main str =
     try
         loop 0
     with End_of_file -> Portaudio.terminate ()
+
+let from_line_in _ =
+    Portaudio.init ();
+    let freq = freq_from_bucket 11025 fftsize in
+    let print_freq i =
+        let str = (string_of_int (freq i)) ^ "\n" in
+        ignore (Unix.write Unix.stdout str 0 (String.length str))
+    in
+    let mag = Array.make (fftsize/2 + 1) 0. in
+    let stream = Portaudio.open_default_stream 1 1 11025 1024 in
+    Portaudio.start_stream stream;
+    let play = stream_processor stream 256 fftsize mag in
+    let rec loop i =
+        (match play i with
+        | (f, v) ->
+        print_freq f
+        | _ -> ());
+        loop (i+1)
+    in
+    try
+        loop 0
+    with End_of_file -> Portaudio.terminate ()
+
+let _ = from_line_in ()*)

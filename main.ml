@@ -1,15 +1,4 @@
-module FFT = Fftw3.S
-
-let miclen = 1024
-let readlen = 256
-let micbufc = Array.make miclen 0.
-let micbuf = [|micbufc|]
-
 let fftsize = 8192
-let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsize
-let dft = FFT.Array1.create FFT.complex Bigarray.c_layout (fftsize/2 + 1)
-let mag = Array.make (fftsize/2 + 1) 0.
-let plan = FFT.Array1.r2c signal dft
 
 let init () =
     Sdl.init [`VIDEO];
@@ -44,59 +33,58 @@ let print_freqs notes font dest fs =
 
 let main () =
     let width, height = 640, 480 in
-    Bigarray.Array1.fill signal 0.;
-    Utils.big_array_copy signal (Wav.createsin 1024 11025 [16.; 8.] [262.;440.]) 0 1024;
-    Wav.hann_window signal;
     init ();
     let notes = Notes.read_notes "assets/notes.txt" 11025 (fftsize/2) in
     let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
     let two55 = Int32.of_int 255 in
-    let frequencies = Sdlvideo.create_RGB_surface [`HWSURFACE] width height 24 two55 two55 two55 two55 in
+    let frequencies = Sdlvideo.create_RGB_surface [`SWSURFACE] width height 24 two55 two55 two55 two55 in
     let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 32 in
-    let stream = Portaudio.open_default_stream 1 1 11025 readlen in
+    let stream = Portaudio.open_default_stream 1 1 11025 256 in
     Portaudio.start_stream stream;
-    let loop = ref true in
+    let mag = Array.make (fftsize/2 + 1) 0. in
+    let processor = Wav.stream_processor stream 256 fftsize 1024 mag in
     let frame = ref 0 in
     let rate = ref 0 in
     let stime = ref (Unix.gettimeofday ()) in
-    let readmic = ref 0 in
-    while !loop do
+    let rec loop i =
         Sdlvideo.fill_rect surface (Int32.of_int 0);
         Sdlevent.pump ();
         match Sdlevent.poll () with
-        | Some Sdlevent.QUIT -> loop := false
-        | _ -> ();
-        if Sdlkey.is_key_pressed Sdlkey.KEY_ESCAPE then
-            loop := false;
-
-        Portaudio.read_stream stream micbuf !readmic readlen;
-        Portaudio.write_stream stream micbuf !readmic readlen;
-        readmic := !readmic + readlen;
-        if !readmic >= miclen then
+        | Some Sdlevent.QUIT -> ()
+        | _ -> 
         begin
-            readmic := 0;
-            Sdlvideo.fill_rect frequencies (Int32.of_int 0);
-            Utils.big_array_copy signal micbufc 0 miclen;
-            Wav.hann_window signal;
-            FFT.exec plan;
-            let (_, mx) = Utils.mag dft mag in
-            let freqs = Utils.foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
-            print_freqs notes tnr frequencies freqs;
-        end;
-        Sdlvideo.blit_surface ~src:frequencies ~dst:surface
-        ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width; Sdlvideo.r_h=height} ();
-
-        (* print frame rate *)
-        incr frame;
-        if (Unix.gettimeofday ()) -. !stime > 1. then
+            if Sdlkey.is_key_pressed Sdlkey.KEY_ESCAPE then
+                ()
+            else
             begin
-                rate := !frame;
-                frame := 0;
-                stime := Unix.gettimeofday ()
-            end;
-        let str = Printf.sprintf "%d" !rate in
-        sdl_print_string tnr str surface 300 300;
-        Sdlvideo.flip surface;
-    done
+                (match  processor i with
+                | Some (_, mx) ->
+                begin
+                    let freqs = Utils.foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
+                    Sdlvideo.fill_rect frequencies (Int32.of_int 0);
+                    print_freqs notes tnr frequencies freqs;
+                end
+                | None -> ());
+
+                Sdlvideo.blit_surface ~src:frequencies ~dst:surface
+                    ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width;
+                    Sdlvideo.r_h=height} ();
+
+                (* print frame rate *)
+                incr frame;
+                if (Unix.gettimeofday ()) -. !stime > 1. then
+                    begin
+                        rate := !frame;
+                        frame := 0;
+                        stime := Unix.gettimeofday ()
+                    end;
+                let str = Printf.sprintf "%d" !rate in
+                sdl_print_string tnr str surface 300 300;
+                Sdlvideo.flip surface;
+                loop (i+1)
+            end
+        end
+    in
+    loop 0
 
 let _ = main ()
