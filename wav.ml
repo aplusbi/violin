@@ -20,6 +20,15 @@ let createsin samples rate amp freq =
     in
     Array.init samples wave
 
+let createsinbuff samples rate amp freq buff start =
+    let step = 2. *. pi /. (float_of_int rate) in
+    let wave i =
+        let t = step *. (float_of_int i) in
+        List.fold_left2 (fun a b c -> a +. b *. sin (c *. t)) 0. amp freq
+    in
+    for i = 0 to samples - 1 do
+        buff.(start + i) <- wave i
+    done
 
 let load_wav fname =
     let file = open_in_bin fname in
@@ -139,7 +148,7 @@ let data_processor data rate step fftsz mag =
         begin
             Utils.big_array_copy signal data (i * step) step;
             FFT.exec plan;
-            Utils.mag dft mag
+            Some (Utils.mag dft mag)
         end
     )
 

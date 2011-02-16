@@ -32,14 +32,16 @@ let print_freqs notes font dest fs =
     print fs 0 0
 
 let main () =
-    let width, height = 640, 480 in
+    let width, height = 1024, 600 in
     init ();
     let notes = Notes.read_notes "assets/notes.txt" 11025 (fftsize/2) in
-    let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
     let two55 = Int32.of_int 255 in
+    let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE;
+    `FULLSCREEN] in
+    let background = Sdlloader.load_image "assets/fingerboard.png" in
     let frequencies = Sdlvideo.create_RGB_surface [`SWSURFACE] width height 24 two55 two55 two55 two55 in
     let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 32 in
-    let stream = Portaudio.open_default_stream 1 1 11025 256 in
+    let stream = Portaudio.open_default_stream 1 1 11025 1024 in
     Portaudio.start_stream stream;
     let mag = Array.make (fftsize/2 + 1) 0. in
     let processor = Wav.stream_processor stream 256 fftsize 1024 mag in
@@ -47,7 +49,9 @@ let main () =
     let rate = ref 0 in
     let stime = ref (Unix.gettimeofday ()) in
     let rec loop i =
-        Sdlvideo.fill_rect surface (Int32.of_int 0);
+        Sdlvideo.blit_surface ~src:background ~dst:surface
+        ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width;
+        Sdlvideo.r_h=height} ();
         Sdlevent.pump ();
         match Sdlevent.poll () with
         | Some Sdlevent.QUIT -> ()
