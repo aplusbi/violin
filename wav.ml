@@ -1,4 +1,4 @@
-module FFT = Fftw3.S
+module FFT = Fftw3.D
 
 let pi = 3.1415926
 

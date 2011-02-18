@@ -1,12 +1,12 @@
 # OASIS_START
-# DO NOT EDIT (digest: 1bc4a3cf4d88a5936d8e5fcc934a6324)
+# DO NOT EDIT (digest: 7cbf8d4cc6d031f38555eb17bc7040a0)
 # Executable violin
-"main.byte": pkg_unix
-"main.byte": pkg_sdl.sdlttf
-"main.byte": pkg_sdl.sdlimage
-"main.byte": pkg_sdl
-"main.byte": pkg_portaudio
-"main.byte": pkg_fftw3
+<main.{native,byte}>: pkg_unix
+<main.{native,byte}>: pkg_sdl.sdlttf
+<main.{native,byte}>: pkg_sdl.sdlimage
+<main.{native,byte}>: pkg_sdl
+<main.{native,byte}>: pkg_portaudio
+<main.{native,byte}>: pkg_fftw3
 <*.ml{,i}>: pkg_unix
 <*.ml{,i}>: pkg_sdl.sdlttf
 <*.ml{,i}>: pkg_sdl.sdlimage

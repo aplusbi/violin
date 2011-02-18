@@ -31,15 +31,21 @@ let print_freqs notes font dest fs =
     in
     print fs 0 0
 
+let load_surface fmt fname =
+    let image = Sdlloader.load_image "assets/fingerboard.png" in
+    let {Sdlvideo.w=width; Sdlvideo.h=height} = Sdlvideo.surface_info image in
+    let surface = Sdlvideo.create_RGB_surface_format fmt [`HWSURFACE] width height in
+    Sdlvideo.blit_surface ~src:image ~dst:surface
+    ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width;
+    Sdlvideo.r_h=height} ();
+    surface
+
 let main () =
-    let width, height = 1024, 600 in
+    let width, height = 640, 480 in
     init ();
     let notes = Notes.read_notes "assets/notes.txt" 11025 (fftsize/2) in
-    let two55 = Int32.of_int 255 in
-    let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE;
-    `FULLSCREEN] in
-    let background = Sdlloader.load_image "assets/fingerboard.png" in
-    let frequencies = Sdlvideo.create_RGB_surface [`SWSURFACE] width height 24 two55 two55 two55 two55 in
+    let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
+    let background = load_surface surface "assets/fingerboard.png" in
     let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 32 in
     let stream = Portaudio.open_default_stream 1 1 11025 1024 in
     Portaudio.start_stream stream;
@@ -65,14 +71,9 @@ let main () =
                 | Some (_, mx) ->
                 begin
                     let freqs = Utils.foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
-                    Sdlvideo.fill_rect frequencies (Int32.of_int 0);
-                    print_freqs notes tnr frequencies freqs;
+                    print_freqs notes tnr surface freqs;
                 end
                 | None -> ());
-
-                Sdlvideo.blit_surface ~src:frequencies ~dst:surface
-                    ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width;
-                    Sdlvideo.r_h=height} ();
 
                 (* print frame rate *)
                 incr frame;
@@ -83,7 +84,7 @@ let main () =
                         stime := Unix.gettimeofday ()
                     end;
                 let str = Printf.sprintf "%d" !rate in
-                sdl_print_string tnr str surface 300 300;
+                sdl_print_string tnr str surface 30 300;
                 Sdlvideo.flip surface;
                 loop (i+1)
             end

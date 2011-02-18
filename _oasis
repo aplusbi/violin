@@ -9,7 +9,7 @@ Plugins:      DevFiles (0.2)
 Executable violin
   Path:       .
   Install: true
-  CompiledObject: byte
+  CompiledObject: best
   BuildTools: ocamlbuild
   MainIs:     main.ml
   BuildDepends: unix, fftw3, portaudio, sdl, sdl.sdlimage, sdl.sdlttf

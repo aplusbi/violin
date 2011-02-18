@@ -11,6 +11,8 @@ module Note =
 
 module NoteMap = Map.Make(Note)
 
+module FingerMap = Map.Make(String)
+
 let split_string str ch =
     let rec split i =
         try
@@ -35,3 +37,16 @@ let read_notes fname rate samples =
         with End_of_file -> NoteMap.empty
     in
     read_line ()
+    
+let read_fingers fname x y w h =
+    let file = open_in fname in
+    let rec read_split x acc = function [] -> acc
+        | h::t -> FingerMap.add h (x, y) (read_split (x+1) acc t)
+    in
+    let rec read_line y =
+        try
+            let line = input_line file in
+            read_split 0 (read_line (y+1)) (split_string line '\t')
+        with End_of_file -> FingerMap.empty
+    in
+    read_line 0
