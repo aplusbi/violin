@@ -14,6 +14,12 @@ let sdl_print_string font str dest x y =
         let destrect = { Sdlvideo.r_x=x; Sdlvideo.r_y=y; Sdlvideo.r_w=w; Sdlvideo.r_h=h } in
         Sdlvideo.blit_surface ~src:src ~dst:dest ~dst_rect:destrect ()
 
+let print_text font txt color dest =
+    let src = Sdlttf.render_text_solid font txt color in
+    let { Sdlvideo.w=w; Sdlvideo.h=h } = Sdlvideo.surface_info src in
+    let destrect = { Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=w; Sdlvideo.r_h=h } in
+    Sdlvideo.blit_surface ~src:src ~dst:dest ~dst_rect:destrect ()
+
 let print_freqs notes font dest fs =
     let rec print fs x y = match fs with
     | [] -> ()
@@ -40,10 +46,27 @@ let load_surface fmt fname =
     Sdlvideo.r_h=height} ();
     surface
 
+type finger_pos = {surface:Sdlvideo.surface; pos:Sdlvideo.rect}
+
+let create_notes font fmt f =
+    let bg = Sdlloader.load_image "assets/green64x64.png" in
+    let note k v =
+        let s = Sdlvideo.create_RGB_surface_format fmt [`HWSURFACE] 64 64 in
+        Sdlvideo.blit_surface ~src:bg ~dst:s
+        ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=64;
+        Sdlvideo.r_h=64} ();
+        print_text font k Sdlvideo.white s;
+        let (x, y) = v in
+        let rect = {Sdlvideo.r_x=x; Sdlvideo.r_y=y; Sdlvideo.r_w=64; Sdlvideo.r_h=64} in
+        {surface=s; pos=rect}
+    in
+    Notes.FingerMap.mapi note f
+
 let main () =
     let width, height = 640, 480 in
     init ();
     let notes = Notes.read_notes "assets/notes.txt" 11025 (fftsize/2) in
+    let fingers = Notes.read_fingers "assets/fingers.txt" 110 0 64 64 in
     let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
     let background = load_surface surface "assets/fingerboard.png" in
     let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 32 in
