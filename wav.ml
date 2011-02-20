@@ -57,6 +57,7 @@ let load_wav fname =
     pcm;;
 
 let hann_window ?(l = -1) ba =
+    ()(*
     let len =
         if l == -1 then
             Array1.dim ba
@@ -69,7 +70,7 @@ let hann_window ?(l = -1) ba =
         let wn = 0.5 *. (1. -. (cos (2. *. pi *. n /. l))) in
         let x = Array1.get ba i in
         Array1.set ba i (x *. wn)
-    done
+    done*)
 
 
 let freq_from_bucket rate samples i =

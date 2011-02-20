@@ -20,14 +20,29 @@ let print_text font txt color dest =
     let destrect = { Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=w; Sdlvideo.r_h=h } in
     Sdlvideo.blit_surface ~src:src ~dst:dest ~dst_rect:destrect ()
 
-let print_freqs notes font dest fs =
+let print_freqs font dest fs =
     let rec print fs x y = match fs with
     | [] -> ()
-    | (i, v)::t ->
+    | (i, _)::t ->
+        try
+            let f = (float_of_int i) *. 11025. /. (float_of_int fftsize) in
+            let str = Printf.sprintf "%f" f in
+            let src = Sdlttf.render_text_solid font str Sdlvideo.white in
+            let { Sdlvideo.w=w; Sdlvideo.h=h } = Sdlvideo.surface_info src in
+            let destrect = { Sdlvideo.r_x=x; Sdlvideo.r_y=y; Sdlvideo.r_w=w; Sdlvideo.r_h=h } in
+            Sdlvideo.blit_surface ~src:src ~dst:dest ~dst_rect:destrect ();
+            print t x (y+h)
+        with Not_found -> print t x y
+    in
+    print fs 0 64
+
+let print_notes notes font dest fs =
+    let rec print fs x y = match fs with
+    | [] -> ()
+    | (i, _)::t ->
         try
             let f = Notes.NoteMap.find i notes in
-            (*let f = string_of_float ((float_of_int i) *. 11025. /. (float_of_int fftsize)) in*)
-            let str = Printf.sprintf "%s: %f" f v in
+            let str = Printf.sprintf "%s" f in
             let src = Sdlttf.render_text_solid font str Sdlvideo.white in
             let { Sdlvideo.w=w; Sdlvideo.h=h } = Sdlvideo.surface_info src in
             let destrect = { Sdlvideo.r_x=x; Sdlvideo.r_y=y; Sdlvideo.r_w=w; Sdlvideo.r_h=h } in
@@ -62,14 +77,28 @@ let create_notes font fmt f =
     in
     Notes.FingerMap.mapi note f
 
+let draw_finger_pos dest note map =
+    try
+        let pos = Notes.FingerMap.find note map in
+        Sdlvideo.blit_surface ~src:pos.surface ~dst:dest ~dst_rect:pos.pos ();
+    with Not_found -> ()
+
+let draw_all fingers dest =
+    Notes.FingerMap.iter (fun k v ->
+        Sdlvideo.blit_surface ~src:v.surface ~dst:dest ~dst_rect:v.pos ()
+    ) fingers
+
+
 let main () =
     let width, height = 640, 480 in
     init ();
     let notes = Notes.read_notes "assets/notes.txt" 11025 (fftsize/2) in
-    let fingers = Notes.read_fingers "assets/fingers.txt" 110 0 64 64 in
     let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
-    let background = load_surface surface "assets/fingerboard.png" in
     let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 32 in
+    let background = load_surface surface "assets/fingerboard.png" in
+    let fingers_lookup = Notes.read_fingers "assets/fingers.txt" (310-128) 0 64 64 in
+    Notes.FingerMap.iter (fun s (x,y) -> Printf.printf "%s: %d,  %d\n" s x y) fingers_lookup;
+    let fingers = create_notes tnr surface fingers_lookup in
     let stream = Portaudio.open_default_stream 1 1 11025 1024 in
     Portaudio.start_stream stream;
     let mag = Array.make (fftsize/2 + 1) 0. in
@@ -78,9 +107,6 @@ let main () =
     let rate = ref 0 in
     let stime = ref (Unix.gettimeofday ()) in
     let rec loop i =
-        Sdlvideo.blit_surface ~src:background ~dst:surface
-        ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width;
-        Sdlvideo.r_h=height} ();
         Sdlevent.pump ();
         match Sdlevent.poll () with
         | Some Sdlevent.QUIT -> ()
@@ -91,10 +117,18 @@ let main () =
             else
             begin
                 (match  processor i with
-                | Some (_, mx) ->
+                | Some (mi, mx) ->
                 begin
-                    let freqs = Utils.foldmaxima (fun a i v -> if i > 5 && v > 0.8 *. mx then (i, v)::a else a) [] mag in
-                    print_freqs notes tnr surface freqs;
+                    Sdlvideo.blit_surface ~src:background ~dst:surface
+                    ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width;
+                    Sdlvideo.r_h=height} ();
+                    print_notes notes tnr surface [mi, mx];
+                    print_freqs tnr surface [mi, mx];
+                    (*draw_all fingers surface;*)
+                try
+                    let n = Notes.NoteMap.find mi notes in
+                    draw_finger_pos surface n fingers
+                with Not_found -> ();
                 end
                 | None -> ());
 
