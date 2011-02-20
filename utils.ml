@@ -3,6 +3,11 @@ let big_array_copy ba a first len =
         Bigarray.Array1.set ba i a.(first + i)
     done
 
+let array_copy_big a ba first len =
+    for i = 0 to len-1 do
+        a.(i) <- Bigarray.Array1.get ba (first + i)
+    done
+
 let mag ba a =
     let len = min (Bigarray.Array1.dim ba) (Array.length a) in
     let mi, mx = ref 0, ref 0. in

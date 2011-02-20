@@ -1,4 +1,5 @@
 let fftsize = 8192
+let samplerate = 44100
 
 let init () =
     Sdl.init [`VIDEO];
@@ -25,7 +26,7 @@ let print_freqs font dest fs =
     | [] -> ()
     | (i, _)::t ->
         try
-            let f = (float_of_int i) *. 11025. /. (float_of_int fftsize) in
+            let f = (float_of_int i) *. (float_of_int samplerate) /. (float_of_int fftsize) in
             let str = Printf.sprintf "%f" f in
             let src = Sdlttf.render_text_solid font str Sdlvideo.white in
             let { Sdlvideo.w=w; Sdlvideo.h=h } = Sdlvideo.surface_info src in
@@ -92,17 +93,20 @@ let draw_all fingers dest =
 let main () =
     let width, height = 640, 480 in
     init ();
-    let notes = Notes.read_notes "assets/notes.txt" 11025 (fftsize/2) in
+    let notes = Notes.read_notes "assets/notes.txt" samplerate (fftsize/2) in
     let surface = Sdlvideo.set_video_mode width height [`DOUBLEBUF; `HWSURFACE] in
     let tnr = Sdlttf.open_font "assets/Times_New_Roman.ttf" 32 in
     let background = load_surface surface "assets/fingerboard.png" in
     let fingers_lookup = Notes.read_fingers "assets/fingers.txt" (310-128) 0 64 64 in
-    Notes.FingerMap.iter (fun s (x,y) -> Printf.printf "%s: %d,  %d\n" s x y) fingers_lookup;
     let fingers = create_notes tnr surface fingers_lookup in
-    let stream = Portaudio.open_default_stream 1 1 11025 1024 in
+    let stream = Portaudio.open_default_stream 1 1 samplerate 1024 in
     Portaudio.start_stream stream;
     let mag = Array.make (fftsize/2 + 1) 0. in
-    let processor = Wav.stream_processor stream 256 fftsize 1024 mag in
+    (*let processor = Wav.stream_processor stream 256 fftsize 1024 mag in*)
+    let data = Wav.load_wav "assets/LightlyRow.wav" in
+    let playbuf = Array.make 1024 0. in
+    let buf = [|playbuf|] in
+    let processor = Wav.data_processor data samplerate 1024 fftsize mag in
     let frame = ref 0 in
     let rate = ref 0 in
     let stime = ref (Unix.gettimeofday ()) in
@@ -119,12 +123,13 @@ let main () =
                 (match  processor i with
                 | Some (mi, mx) ->
                 begin
+                    Utils.array_copy_big playbuf data (i*1024) 1024;
+                    Portaudio.write_stream stream buf 0 1024;
                     Sdlvideo.blit_surface ~src:background ~dst:surface
                     ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width;
                     Sdlvideo.r_h=height} ();
                     print_notes notes tnr surface [mi, mx];
                     print_freqs tnr surface [mi, mx];
-                    (*draw_all fingers surface;*)
                 try
                     let n = Notes.NoteMap.find mi notes in
                     draw_finger_pos surface n fingers
