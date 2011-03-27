@@ -12,7 +12,7 @@ Executable violin
   CompiledObject: best
   BuildTools: ocamlbuild
   MainIs:     main.ml
-  BuildDepends: unix, fftw3, portaudio, sdl, sdl.sdlimage, sdl.sdlttf
+  BuildDepends: unix, threads, fftw3, portaudio, sdl, sdl.sdlimage, sdl.sdlttf
   
 #Executable violin_cli
   #Path:       .

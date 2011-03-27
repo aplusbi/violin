@@ -1,4 +1,6 @@
-let fftsize = 8192
+open Bigarray
+
+let fftsize = (2*8192)
 let samplerate = 44100
 
 let init () =
@@ -26,7 +28,7 @@ let print_freqs font dest fs =
     | [] -> ()
     | (i, _)::t ->
         try
-            let f = (float_of_int i) *. (float_of_int samplerate) /. (float_of_int fftsize) in
+            let f = (float_of_int i) *. (float_of_int samplerate) /.  (float_of_int fftsize) in
             let str = Printf.sprintf "%f" f in
             let src = Sdlttf.render_text_solid font str Sdlvideo.white in
             let { Sdlvideo.w=w; Sdlvideo.h=h } = Sdlvideo.surface_info src in
@@ -99,14 +101,16 @@ let main () =
     let background = load_surface surface "assets/fingerboard.png" in
     let fingers_lookup = Notes.read_fingers "assets/fingers.txt" (310-128) 0 64 64 in
     let fingers = create_notes tnr surface fingers_lookup in
-    let stream = Portaudio.open_default_stream 1 1 samplerate 1024 in
+    let stream = Portaudio.open_default_stream 1 1 samplerate 256 in
     Portaudio.start_stream stream;
     let mag = Array.make (fftsize/2 + 1) 0. in
     (*let processor = Wav.stream_processor stream 256 fftsize 1024 mag in*)
-    let data = Wav.load_wav "assets/LightlyRow.wav" in
-    let playbuf = Array.make 1024 0. in
-    let buf = [|playbuf|] in
-    let processor = Wav.data_processor data samplerate 1024 fftsize mag in
+    let wav_data = Wav.load_wav "assets/LightlyRow2.wav" in
+    let buf = Array2.slice_left wav_data 0 in
+    let wav_len = (Array1.dim buf) in
+    let fftbuf = Array1.create float64 c_layout wav_len in
+    Utils.ba_blit buf fftbuf 0 0 wav_len;
+    let processor = Wav.data_processor fftbuf samplerate 1024 fftsize mag in
     let frame = ref 0 in
     let rate = ref 0 in
     let stime = ref (Unix.gettimeofday ()) in
@@ -123,8 +127,6 @@ let main () =
                 (match  processor i with
                 | Some (mi, mx) ->
                 begin
-                    Utils.array_copy_big playbuf data (i*1024) 1024;
-                    Portaudio.write_stream stream buf 0 1024;
                     Sdlvideo.blit_surface ~src:background ~dst:surface
                     ~dst_rect:{Sdlvideo.r_x=0; Sdlvideo.r_y=0; Sdlvideo.r_w=width;
                     Sdlvideo.r_h=height} ();
@@ -136,6 +138,7 @@ let main () =
                 with Not_found -> ();
                 end
                 | None -> ());
+                    Portaudio.write_stream_ba stream (genarray_of_array2 wav_data) (i*1024) 1024;
 
                 (* print frame rate *)
                 incr frame;

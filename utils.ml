@@ -3,6 +3,11 @@ let big_array_copy ba a first len =
         Bigarray.Array1.set ba i a.(first + i)
     done
 
+let ba_blit a b aofs bofs len =
+    for i = 0 to len-1 do
+        Bigarray.Array1.set b (i+bofs) (Bigarray.Array1.get a (i+bofs))
+    done
+
 let array_copy_big a ba first len =
     for i = 0 to len-1 do
         a.(i) <- Bigarray.Array1.get ba (first + i)

@@ -33,6 +33,10 @@ let createsinbuff samples rate amp freq buff start =
 
 let load_wav fname =
     let file = open_in_bin fname in
+    seek_in file 22;
+    let b0 = input_byte file in
+    let b1 = input_byte file in
+    let chans = b0 lor (b1 lsl 8) in
     seek_in file 40;
     let b0 = input_byte file in
     let b1 = input_byte file in
@@ -40,19 +44,21 @@ let load_wav fname =
     let b3 = input_byte file in
     let ch_size = b0 lor (b1 lsl 8) lor (b2 lsl 16) lor (b3 lsl 24) in
     seek_in file (48 + ch_size);
-    let len = in_channel_length file in
-    let pcm = Array1.create float64 Bigarray.c_layout (len/2) in
-    for i = 0 to len / 2 do
-        try
-            let a = input_byte file in
-            let b = input_byte file in
-            let c = a lor (b lsl 8) in
-            let d =
-                if c <= 32768 then c
-                else -(65536 - c)
-            in
-            Array1.set pcm i ((float_of_int d) /. 8192.);
-        with End_of_file -> ()
+    let len = (in_channel_length file) / chans / 2 in
+    let pcm = Array2.create float32 Bigarray.c_layout chans len in
+    for i = 0 to len-1 do
+        for chan = 0 to chans-1 do
+            try
+                let a = input_byte file in
+                let b = input_byte file in
+                let c = a lor (b lsl 8) in
+                let d =
+                    if c <= 32768 then c
+                    else -(65536 - c)
+                in
+                Array2.set pcm chan i ((float_of_int d) /. 32768.)
+            with End_of_file -> ()
+        done
     done;
     pcm;;
 
@@ -80,22 +86,22 @@ let fftsize = 8192
 let stream_processor stream sstep fftsz fstep mag =
     (* fft stuff *)
     let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsz in
-    Array1.fill signal 0.;
     let dft = FFT.Array1.create FFT.complex Bigarray.c_layout (fftsz/2 + 1) in
-    Array1.fill dft Complex.zero;
     let plan = FFT.Array1.r2c signal dft in
+    Array1.fill signal 0.;
+    Array1.fill dft Complex.zero;
 
     (* portaudio stuff *)
-    let data = Array.make fstep 0. in
-    let buf = [|data|] in
+    let buf = Array2.create Bigarray.float32 Bigarray.c_layout 1 fstep in
+    let gbuf = genarray_of_array2 buf in
     let curr = ref 0 in
     (fun i ->
-        Portaudio.read_stream stream buf !curr sstep;
+        Portaudio.read_stream_ba stream gbuf !curr sstep;
+        Utils.ba_blit (Array2.slice_left buf 0) signal !curr !curr sstep;
         curr := !curr + sstep;
         if !curr >= fstep then
         begin
             curr := 0;
-            Utils.big_array_copy signal data 0 fstep;
             hann_window ~l:fstep signal;
             FFT.exec plan;
             Some (Utils.mag dft mag)
@@ -107,23 +113,23 @@ let stream_processor stream sstep fftsz fstep mag =
 let stream_playback_processor stream sstep fftsz fstep mag =
     (* fft stuff *)
     let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsz in
-    Array1.fill signal 0.;
     let dft = FFT.Array1.create FFT.complex Bigarray.c_layout (fftsz/2 + 1) in
-    Array1.fill dft Complex.zero;
     let plan = FFT.Array1.r2c signal dft in
+    Array1.fill signal 0.;
+    Array1.fill dft Complex.zero;
 
     (* portaudio stuff *)
-    let data = Array.make fstep 0. in
-    let buf = [|data|] in
+    let buf = Array2.create Bigarray.float32 Bigarray.c_layout 1 fstep in
+    let gbuf = genarray_of_array2 buf in
     let curr = ref 0 in
     (fun i ->
-        Portaudio.read_stream stream buf !curr sstep;
-        Portaudio.write_stream stream buf !curr sstep;
+        Portaudio.read_stream_ba stream gbuf !curr sstep;
+        Portaudio.write_stream_ba stream gbuf !curr sstep;
+        Utils.ba_blit (Array2.slice_left buf 0) signal !curr !curr sstep;
         curr := !curr + sstep;
         if !curr >= fstep then
         begin
             curr := 0;
-            Utils.big_array_copy signal data 0 fstep;
             hann_window ~l:fstep signal;
             FFT.exec plan;
             Some (Utils.mag dft mag)
@@ -142,10 +148,10 @@ let data_processor data rate step fftsz mag =
 
     (* fft stuff *)
     let signal = FFT.Array1.create FFT.float Bigarray.c_layout fftsz in
-    Array1.fill signal 0.;
     let dft = FFT.Array1.create FFT.complex Bigarray.c_layout (fftsz/2 + 1) in
-    Array1.fill dft Complex.zero;
     let plan = FFT.Array1.r2c signal dft in
+    Array1.fill signal 0.;
+    Array1.fill dft Complex.zero;
 
     (fun i ->
         if (i + 1) * step >= len-1 then
@@ -161,6 +167,6 @@ let data_processor data rate step fftsz mag =
         end
     )
 
-let wav_processor fname rate step fftsz mag =
-    let data = load_wav fname in
-    data_processor data rate step fftsz mag
+(*let wav_processor fname rate step fftsz mag =*)
+    (*let data = load_wav fname in*)
+    (*data_processor data rate step fftsz mag*)
